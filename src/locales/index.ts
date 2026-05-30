@@ -13,6 +13,7 @@ import ta from './ta.json';
 import th from './th.json';
 import tr from './tr.json';
 import uk from './uk.json';
+import uz from './uz.json';
 import vi from './vi.json';
 import zhHans from './zh_Hans.json';
 import zhHant from './zh_Hant.json';
@@ -148,6 +149,14 @@ export const ALL_LANGUAGES: Record<string, LanguageInfo> = {
         alternativeLanguageTag: 'uk-UA',
         textDirection: 'ltr',
         content: uk
+    },
+    'uz': {
+        name: 'Uzbek',
+        displayName: "O'zbekcha",
+        alternativeLanguageTag: 'uz-UZ',
+        aliases: ['uz-Latn', 'uz-Latn-UZ'],
+        textDirection: 'ltr',
+        content: uz
     },
     'vi': {
         name: 'Vietnamese',

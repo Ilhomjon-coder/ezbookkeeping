@@ -1,0 +1,26 @@
+# Caddy auto-provisions a Let's Encrypt certificate for {$DOMAIN} on first request.
+# Make sure the A/AAAA record for {$DOMAIN} points at this droplet's IP and that
+# ports 80 and 443 are reachable from the public internet.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment for staging certs while debugging:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Tighten headers a bit. Adjust to your needs.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy app:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+}

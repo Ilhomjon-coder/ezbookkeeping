@@ -1,0 +1,120 @@
+# Production Docker Compose stack for ezBookkeeping
+#
+# Quick start on a fresh droplet:
+#   1. Install Docker + Docker Compose (curl -fsSL https://get.docker.com | sh)
+#   2. Clone this repo (or just copy this file + .env.example + deploy/)
+#   3. cp .env.example .env  &&  edit .env to set DOMAIN, ACME_EMAIL, DB_PASSWORD
+#   4. docker compose up -d
+#   5. Visit https://${DOMAIN}/ — Caddy provisions a Let's Encrypt cert on first request.
+#
+# Image is pulled from GHCR by default (see EZBK_IMAGE). Override in .env or use
+# `docker compose build` to build locally from the Dockerfile.
+
+services:
+  app:
+    image: ${EZBK_IMAGE:-ghcr.io/ilhomjon-coder/ezbookkeeping:latest}
+    # Build context lets you `docker compose build` on the droplet for the
+    # very first deploy (before any image has been pushed to GHCR). After
+    # GitHub Actions publishes the image, plain `docker compose pull` works.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ezbookkeeping
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Server
+      EBK_SERVER_PROTOCOL: http
+      EBK_SERVER_HTTP_ADDR: 0.0.0.0
+      EBK_SERVER_HTTP_PORT: "8080"
+      EBK_SERVER_DOMAIN: ${DOMAIN}
+      EBK_SERVER_ROOT_URL: https://${DOMAIN}/
+      EBK_SERVER_ENABLE_GZIP: "true"
+      EBK_SERVER_LOG_REQUEST: "true"
+
+      # Database (PostgreSQL)
+      EBK_DATABASE_TYPE: postgres
+      EBK_DATABASE_HOST: db:5432
+      EBK_DATABASE_NAME: ${POSTGRES_DB:-ezbookkeeping}
+      EBK_DATABASE_USER: ${POSTGRES_USER:-ezbookkeeping}
+      EBK_DATABASE_PASSWD: ${POSTGRES_PASSWORD}
+      EBK_DATABASE_SSL_MODE: disable
+      EBK_DATABASE_AUTO_UPDATE_DATABASE: "true"
+
+      # Security — change SECRET on first deploy; rotating it invalidates all sessions
+      EBK_SECURITY_SECRET: ${SECRET}
+      EBK_SECURITY_REQUEST_ID_HEADER: "true"
+
+      # Optional: enable SMTP for password reset / email verification
+      EBK_MAIL_ENABLE_SMTP: ${ENABLE_SMTP:-false}
+      EBK_MAIL_SMTP_HOST: ${SMTP_HOST:-}
+      EBK_MAIL_SMTP_USER: ${SMTP_USER:-}
+      EBK_MAIL_SMTP_PASSWD: ${SMTP_PASSWORD:-}
+      EBK_MAIL_FROM_ADDRESS: ${SMTP_FROM:-}
+
+      TZ: ${TZ:-Asia/Tashkent}
+    volumes:
+      - ezbk-storage:/ezbookkeeping/storage
+      - ezbk-log:/ezbookkeeping/log
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ezbk-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: ezbookkeeping-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ezbookkeeping}
+      POSTGRES_USER: ${POSTGRES_USER:-ezbookkeeping}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ:-Asia/Tashkent}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ezbookkeeping} -d ${POSTGRES_DB:-ezbookkeeping}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ezbk-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ezbookkeeping-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - ezbk-net
+
+volumes:
+  ezbk-storage:
+  ezbk-log:
+  pg-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  ezbk-net:
+    driver: bridge
