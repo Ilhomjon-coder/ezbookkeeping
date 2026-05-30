@@ -112,7 +112,16 @@ jobs:
             set -euo pipefail
             APP_DIR="${{ vars.DROPLET_APP_DIR || '/opt/ezbookkeeping' }}"
             cd "$APP_DIR"
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-            docker compose pull app
+            # If the GHCR package is private, scope the GITHUB_TOKEN login to a
+            # throwaway docker config so the (short-lived) token never lingers
+            # on the droplet — leftover ghs_* tokens block all future pulls
+            # once they expire. If the package is public, login is unnecessary;
+            # this block is harmless either way.
+            TMP_CFG=$(mktemp -d)
+            trap 'rm -rf "$TMP_CFG"' EXIT
+            echo "${{ secrets.GITHUB_TOKEN }}" | \
+              docker --config "$TMP_CFG" login ${{ env.REGISTRY }} \
+                -u ${{ github.actor }} --password-stdin
+            docker --config "$TMP_CFG" compose pull app
             docker compose up -d --remove-orphans
             docker image prune -f
